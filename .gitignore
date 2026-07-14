@@ -1,0 +1,3 @@
+__pycache__/
+subscription_backups/*.yaml
+subscription_backups/*.json
