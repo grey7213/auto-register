@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=账号注册机
+Name[zh_CN]=账号注册机
+Comment=随机邮箱/IP 注册账号并自动提取订阅链接
+Exec=python3 /home/kali/Desktop/register-account-tool/register_gui.py
+Path=/home/kali/Desktop/register-account-tool
+Icon=applications-internet
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=true
