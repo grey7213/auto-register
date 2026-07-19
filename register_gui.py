@@ -17,17 +17,18 @@ from tkinter import messagebox, scrolledtext, ttk
 import requests
 
 from register_account import (
+    REGISTER_PATH,
+    api_url,
     append_result,
     apply_random_client,
     attach_subscribe_url,
     build_credentials,
     get_email_domains,
+    normalize_base_url,
     pick_email_domain,
     registration_succeeded,
     response_payload,
     summarize_failure,
-    api_url,
-    REGISTER_PATH,
 )
 
 
@@ -105,9 +106,15 @@ class RegisterApp(tk.Tk):
         folder = path if path.is_dir() else path.parent
         folder.mkdir(parents=True, exist_ok=True)
         try:
+            import os
             import subprocess
 
-            subprocess.Popen(["xdg-open", str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if sys.platform == "win32":
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["xdg-open", str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as error:
             messagebox.showerror("打开失败", str(error))
 
@@ -129,7 +136,7 @@ class RegisterApp(tk.Tk):
             messagebox.showerror("参数错误", "注册数量必须是 >= 1 的整数，间隔必须是 >= 0 的数字")
             return
 
-        base_url = self.base_url_var.get().strip() or DEFAULT_BASE_URL
+        base_url = normalize_base_url(self.base_url_var.get().strip() or DEFAULT_BASE_URL)
         output = Path(self.output_var.get().strip() or DEFAULT_OUTPUT).expanduser()
         insecure = self.insecure_var.get()
 
@@ -155,6 +162,7 @@ class RegisterApp(tk.Tk):
     ) -> None:
         try:
             session = requests.Session()
+            session.trust_env = False  # ignore system proxy (Clash) during registration
             session.headers.update({"Accept": "application/json", "Content-Type": "application/json"})
             session.verify = not insecure
             domains = get_email_domains(session, base_url, 15)
@@ -276,7 +284,7 @@ def main() -> int:
         app = RegisterApp()
     except tk.TclError as error:
         print(f"无法启动图形界面: {error}", file=sys.stderr)
-        print("请改用命令行: python3 register_account.py --output accounts.jsonl", file=sys.stderr)
+        print("请改用命令行: python register_account.py --output accounts.jsonl", file=sys.stderr)
         return 1
     app.mainloop()
     return 0

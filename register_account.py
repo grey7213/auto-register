@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -20,6 +20,12 @@ CONFIG_PATH = "/api/v1/guest/comm/config"
 REGISTER_PATH = "/api/v1/passport/auth/register"
 LOGIN_PATH = "/api/v1/passport/auth/login"
 SUBSCRIBE_PATH = "/api/v1/user/getSubscribe"
+
+
+def normalize_base_url(base_url: str) -> str:
+    """Strip SPA hash routes/paths so only scheme://host[:port] remains."""
+    parts = urlsplit(base_url if "//" in base_url else "https://" + base_url)
+    return urlunsplit((parts.scheme or "https", parts.netloc, "", "", ""))
 
 # Natural-looking local-part fragments for less homogeneous emails.
 _FIRST_NAMES = (
@@ -387,12 +393,15 @@ def main() -> int:
     if arguments.count < 0 or arguments.delay < 0 or arguments.timeout <= 0:
         parser.error("--count and --delay must be non-negative; --timeout must be positive")
 
+    base_url = normalize_base_url(arguments.base_url)
+
     session = requests.Session()
+    session.trust_env = False  # ignore system Clash/HTTP proxy for control-plane calls
     session.headers.update({"Accept": "application/json", "Content-Type": "application/json"})
     session.verify = not arguments.insecure
 
     try:
-        domains = get_email_domains(session, arguments.base_url, arguments.timeout)
+        domains = get_email_domains(session, base_url, arguments.timeout)
     except requests.RequestException as error:
         print(f"config request failed: {error}", file=sys.stderr)
         return 2
@@ -408,7 +417,7 @@ def main() -> int:
         print(f"{error}; whitelist: {', '.join(domains)}", file=sys.stderr)
         return 2
 
-    register_url = api_url(arguments.base_url, REGISTER_PATH)
+    register_url = api_url(base_url, REGISTER_PATH)
     index = 0
     while arguments.count == 0 or index < arguments.count:
         index += 1
@@ -436,7 +445,7 @@ def main() -> int:
             if succeeded and not arguments.skip_subscribe:
                 attach_subscribe_url(
                     session,
-                    arguments.base_url,
+                    base_url,
                     arguments.timeout,
                     result,
                     payload,

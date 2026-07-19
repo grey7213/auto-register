@@ -70,6 +70,7 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 
 
 def api_request(session: requests.Session, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any]:
+    kwargs.setdefault("proxies", {"http": None, "https": None})
     response = session.request(method, f"{API_BASE}{endpoint}", timeout=20, **kwargs)
     response.raise_for_status()
     payload = response.json()
@@ -80,6 +81,13 @@ def api_request(session: requests.Session, method: str, endpoint: str, **kwargs:
 
 def fetch_subscription(account: Account, insecure: bool) -> Subscription:
     session = requests.Session()
+    session.trust_env = False  # ignore system Clash proxy during control-plane calls
+    try:
+        from register_account import apply_random_client
+
+        apply_random_client(session)
+    except Exception:
+        session.headers.setdefault("User-Agent", "ClashVerge/auto-switch")
     verify: bool = not insecure
     login = api_request(session, "POST", "/passport/auth/login", json={"email": account.email, "password": account.password}, verify=verify)
     auth_data = login.get("auth_data")
@@ -87,16 +95,22 @@ def fetch_subscription(account: Account, insecure: bool) -> Subscription:
         raise RuntimeError("login did not return authorization data")
     session.headers["Authorization"] = auth_data
     subscribe = api_request(session, "GET", "/user/getSubscribe", verify=verify)
-    stats = api_request(session, "GET", "/user/getStat", verify=verify)
-    if not isinstance(stats, list) or len(stats) < 2:
-        raise RuntimeError("invalid usage response")
     url = subscribe.get("subscribe_url")
     if not url:
         raise RuntimeError("account has no subscription URL")
+    # Prefer u/d from getSubscribe; some sandboxes return zeros from getStat.
+    used = int(subscribe.get("u") or 0) + int(subscribe.get("d") or 0)
+    if used == 0:
+        try:
+            stats = api_request(session, "GET", "/user/getStat", verify=verify)
+            if isinstance(stats, list) and len(stats) >= 2:
+                used = int(stats[0]) + int(stats[1])
+        except (RuntimeError, TypeError, ValueError):
+            pass
     return Subscription(
         account=account,
         url=url,
-        used=int(stats[0]) + int(stats[1]),
+        used=used,
         quota=int(subscribe.get("transfer_enable") or 0),
         expires_at=int(subscribe.get("expired_at") or 0),
     )
@@ -313,7 +327,12 @@ def uri_subscription_to_yaml(content: str) -> str:
 
 
 def download_profile(subscription_url: str, insecure: bool) -> str:
-    response = requests.get(subscription_url, timeout=30, verify=not insecure)
+    response = requests.get(
+        subscription_url,
+        timeout=30,
+        verify=not insecure,
+        proxies={"http": None, "https": None},
+    )
     response.raise_for_status()
     content = response.text
     try:
