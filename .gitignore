@@ -3,3 +3,7 @@ accounts.jsonl
 *.jsonl
 subscription_backups/*.yaml
 subscription_backups/*.json
+
+gh-login-and-push.sh
+dist/
+*.tar.gz
